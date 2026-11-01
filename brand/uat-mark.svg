@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="214 180 596 620" width="596" height="620">
+  <title>UAT</title>
+  <defs>
+    <linearGradient id="trace" x1="294" y1="0" x2="730" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f66e8"/>
+      <stop offset="1" stop-color="#5b8cff"/>
+    </linearGradient>
+  </defs>
+  <!-- The rest of the stack: services the call didn't go to -->
+  <g stroke="#c5cfe2" stroke-width="15" stroke-linecap="round" fill="none">
+    <path d="M294 529 L322 300"/>
+    <path d="M439 674 L664 770"/>
+    <path d="M730 360 L586 236"/>
+  </g>
+  <g fill="#c5cfe2">
+    <circle cx="322" cy="300" r="27"/>
+    <circle cx="664" cy="770" r="27"/>
+    <circle cx="586" cy="236" r="27"/>
+  </g>
+  <!-- The call, through three services: accepted -->
+  <path d="M294 529 L439 674 L730 360" fill="none" stroke="url(#trace)" stroke-width="62" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#ffffff" stroke="#2f66e8" stroke-width="13">
+    <circle cx="294" cy="529" r="44"/>
+    <circle cx="439" cy="674" r="44"/>
+    <circle cx="730" cy="360" r="44"/>
+  </g>
+  <g fill="#2f66e8">
+    <circle cx="294" cy="529" r="17"/>
+    <circle cx="439" cy="674" r="17"/>
+    <circle cx="730" cy="360" r="17"/>
+  </g>
+</svg>

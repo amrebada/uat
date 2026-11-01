@@ -1,0 +1,102 @@
+/* A transform's code: Monaco in a card, with a bar naming the language and
+   switching the theme. The bar follows the editor's theme. */
+
+.cedit {
+  --code-bg: #fbfbfa;
+  --code-bar: #f3f3f1;
+  --code-line: #e7e7e5;
+  --code-text: #6b6b68;
+  --code-strong: #1c1c1b;
+  --code-pill: #ffffff;
+
+  overflow: hidden;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px var(--code-line);
+  background: var(--code-bg);
+}
+
+.cedit[data-theme='dark'] {
+  --code-bg: #1c1c1b;
+  --code-bar: #232322;
+  --code-line: #363634;
+  --code-text: #a3a39f;
+  --code-strong: #f2f2f0;
+  --code-pill: #343432;
+
+  box-shadow: 0 0 0 1px #000;
+}
+
+.cedit__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--code-line);
+  background: var(--code-bar);
+  font-size: 11.5px;
+  color: var(--code-text);
+}
+
+.cedit__lang {
+  font-weight: 600;
+  color: var(--code-strong);
+}
+
+.cedit__hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cedit__hint b {
+  font-family: var(--mono);
+  color: var(--code-strong);
+}
+
+.cedit__themes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--code-line) 60%, transparent);
+}
+
+.cedit__themes button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--code-text);
+}
+
+.cedit__themes button[data-active] {
+  background: var(--code-pill);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  color: var(--code-strong);
+}
+
+.cedit__host {
+  min-height: 180px;
+  margin: 1px;
+}
+
+/* Monaco's suggestion list and hovers, a little closer to the app */
+.cedit .monaco-editor .suggest-widget,
+.cedit .monaco-editor .monaco-hover {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cedit--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 212px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}

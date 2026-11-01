@@ -1,0 +1,505 @@
+/* UAT: a macOS desktop app in the system webview. Light, one neutral
+   family, one blue accent for the action and what it creates. */
+
+:root {
+  --well: #ebebea;
+  --canvas: #f6f6f5;
+  --surface: #ffffff;
+  --line: #e7e7e5;
+  --line-strong: #d9d9d6;
+  --text: #6b6b68;
+  --text-strong: #1c1c1b;
+  --text-faint: #a3a39f;
+  --icon: #7a7a76;
+  --icon-faint: #b9b9b5;
+  --nav-active: #e3e3e1;
+  --hover: #efefed;
+  --tile: #f1f1ef;
+
+  --accent: #2f66e8;
+  --accent-soft: #e9effd;
+  --ok: #1f9d57;
+  --warn: #c27c00;
+  --danger: #e5484d;
+
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Panels that scroll up and down never scroll sideways (overflow-x:
+     hidden). With always-shown scrollbars, WebKit doesn't always narrow
+     what's laid out when a scrollbar appears and the content's height
+     depends on its width (wrapping text right at the edge): it spills
+     sideways, and a horizontal scrollbar covers the last line. So panels
+     with wrapping content also keep room for their scrollbar from the start
+     (scrollbar-gutter: stable). Lists of one-line rows don't need it.
+     That room is 17px with always-shown scrollbars and 0 with overlay ones;
+     a panel that keeps it has max(3px, calc(<its padding> - var(--scrollbar)))
+     as its right padding, so its insets stay even, and what's at its edge
+     keeps room for a focus or selection ring (3px). Where that leaves the
+     sides uneven (a padding under 20px), the left padding grows to match:
+     max(<its padding>, calc(3px + var(--scrollbar))). WebKit puts both of
+     stable both-edges on the right, so that's no way to centre.
+     src/lib/scrollbars.ts measures it. */
+  --scrollbar: 0px;
+  --pop-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 22px 50px -14px rgba(0, 0, 0, 0.18),
+    0 8px 18px -8px rgba(0, 0, 0, 0.08);
+  --card-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 6px 14px -8px rgba(0, 0, 0, 0.1);
+
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-strong);
+  background: var(--well);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* Monaco uses .icon, .input and .label too: these stay out of it */
+.icon:not(.monaco-editor *) {
+  flex: none;
+  color: var(--icon);
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+/* ---- Buttons ---- */
+
+.btn-primary {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.12s ease;
+}
+
+.btn-primary .icon,
+.btn-primary .spinner {
+  color: #fff;
+}
+
+.btn-primary:hover,
+.btn-primary[data-open] {
+  background: color-mix(in srgb, var(--accent) 90%, #000);
+}
+
+.btn-primary:active {
+  background: color-mix(in srgb, var(--accent) 80%, #000);
+}
+
+.btn-primary:disabled {
+  background: color-mix(in srgb, var(--accent) 45%, #fff);
+}
+
+.btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--surface);
+  font-size: 12.5px;
+  color: var(--text-strong);
+  white-space: nowrap;
+  transition: background-color 0.12s ease;
+}
+
+.btn:hover {
+  background: var(--hover);
+}
+
+.btn:disabled {
+  color: var(--text-faint);
+  background: var(--surface);
+}
+
+.btn[data-danger] {
+  color: var(--danger);
+}
+
+.btn[data-danger] .icon {
+  color: var(--danger);
+}
+
+.icon-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  transition: background-color 0.12s ease;
+}
+
+.icon-btn:hover,
+.icon-btn[data-open] {
+  background: var(--nav-active);
+}
+
+.icon-btn:hover .icon {
+  color: var(--text-strong);
+}
+
+/* ---- Fields ---- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.field__hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.input:not(.monaco-editor *) {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12.5px;
+  color: var(--text-strong);
+  transition: box-shadow 0.12s ease;
+}
+
+.input:not(.monaco-editor *):focus {
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.input:not(.monaco-editor *)::placeholder,
+.textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.input[data-mono],
+.textarea[data-mono] {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  resize: vertical;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--text-strong);
+}
+
+.textarea:focus {
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* ---- Label pill: a colored dot and its name in a hairline pill ---- */
+
+.label:not(.monaco-editor *) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.label__dot {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dot, #9a9a96);
+}
+
+/* ---- Popover and menu ---- */
+
+.popover {
+  position: absolute;
+  z-index: 20;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--pop-shadow);
+  animation: pop-in 0.16s cubic-bezier(0.25, 0.8, 0.25, 1);
+  user-select: none;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.menu {
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text-strong);
+}
+
+.menu__item:hover,
+.menu__item:focus-visible {
+  outline: none;
+  background: var(--hover);
+}
+
+.menu__item[data-danger] {
+  color: var(--danger);
+}
+
+.menu__item[data-danger] .icon {
+  color: var(--danger);
+}
+
+.menu__sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+/* ---- Segmented tabs ---- */
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--tile);
+}
+
+.segmented button {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.segmented button:disabled {
+  color: var(--icon-faint);
+}
+
+.segmented button[data-active] {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.06);
+  color: var(--text-strong);
+}
+
+/* ---- Underline tabs ---- */
+
+.tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs button {
+  position: relative;
+  height: 32px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.tabs button[data-active] {
+  color: var(--text-strong);
+}
+
+.tabs button[data-active]::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text-strong);
+}
+
+.tabs__count {
+  margin-left: 5px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ---- Status ---- */
+
+.spinner {
+  flex: none;
+  animation: spin 0.9s linear infinite;
+  color: var(--icon);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--icon-faint);
+}
+
+.dot[data-state='running'],
+.dot[data-state='open'] {
+  background: var(--ok);
+}
+
+.dot[data-state='paused'],
+.dot[data-state='restarting'],
+.dot[data-state='connecting'] {
+  background: var(--warn);
+}
+
+.dot[data-state='error'],
+.dot[data-state='dead'] {
+  background: var(--danger);
+}
+
+/* ---- Empty state ---- */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+}
+
+.empty__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--tile);
+}
+
+.empty__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.empty__body {
+  max-width: 340px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.empty__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.error-text {
+  font-size: 12px;
+  color: var(--danger);
+}

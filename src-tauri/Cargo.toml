@@ -1,0 +1,51 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+bollard = "0.21.1"
+futures-util = "0.3.34"
+tar = "0.4.46"
+ignore = "0.4.34"
+tokio = { version = "1.54.1", features = ["rt", "macros", "sync", "time", "net", "io-util", "io-std"] }
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-http = "2.8.3"
+libc = "0.2"
+rust_xlsxwriter = "0.102.0"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+reqwest = { version = "0.12.28", default-features = false, features = ["json"] }
+toml_edit = "0.25"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }

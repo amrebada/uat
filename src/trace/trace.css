@@ -1,0 +1,533 @@
+/* A call's trace: the services it went through, left to right on the
+   canvas's dotted ground, then everything that happened, in order. Blue is
+   a call that reached a service, red one that went nowhere. */
+
+.trace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.trace--note {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 40px;
+  font-size: 12.5px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* Nothing to trace: say what is, and offer the demo */
+.trace--none {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.trace--none > span {
+  max-width: 440px;
+}
+
+.trace--note[data-tone='bad'] {
+  color: var(--danger);
+}
+
+.trace-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--accent);
+}
+
+.trace-dot[data-tone='bad'] {
+  background: var(--danger);
+}
+
+.resp__tabs .spinner {
+  margin-left: 6px;
+  vertical-align: -1px;
+}
+
+/* ---- Diagram ---- */
+
+.trace__diagram {
+  flex: 0 1 auto;
+  min-height: 84px;
+  max-height: 58%;
+  overflow: auto;
+  container-type: inline-size;
+  border-bottom: 1px solid var(--line);
+  background: var(--canvas);
+}
+
+.trace__tree {
+  position: relative;
+  min-width: 420px;
+  padding: 8px 0;
+}
+
+/* Narrow: the names and calls matter more than the timing lane */
+@container (max-width: 600px) {
+  .tr {
+    grid-template-columns: var(--tree) minmax(120px, 1fr);
+  }
+
+  .tr__lane,
+  .tr__ms {
+    display: none;
+  }
+}
+
+/* One call: who was called, what was asked, and when on the lane */
+.tr {
+  display: grid;
+  grid-template-columns: var(--tree) minmax(120px, 1fr) minmax(72px, 24%);
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  height: 30px;
+  padding-right: 20px;
+  text-align: left;
+  transition: opacity 0.15s ease;
+  animation: trace-fade 0.3s ease backwards;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+
+.tr:hover {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.tr[data-focus] {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.tr[data-dim] {
+  opacity: 0.45;
+}
+
+.tr__node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding-left: calc(20px + var(--depth) * var(--indent));
+}
+
+.tr__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--tile);
+}
+
+.tr[data-kind='you'] .tr__mark {
+  background: var(--accent-soft);
+}
+
+.tr[data-kind='you'] .tr__mark .icon {
+  color: var(--accent);
+}
+
+.tr[data-kind='process'] .tr__mark {
+  background: #e6f4ee;
+}
+
+.tr[data-kind='process'] .tr__mark .icon {
+  color: var(--ok);
+}
+
+.tr[data-kind='external'] .tr__mark {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+/* Went nowhere: the red line ends in an ✕, then the name it tried */
+.tr[data-kind='failed'] .tr__mark {
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 15%, transparent);
+}
+
+.tr[data-kind='failed'] .tr__mark .icon {
+  color: #fff;
+}
+
+.tr__name {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-strong);
+}
+
+.tr[data-kind='failed'] .tr__name {
+  color: var(--danger);
+}
+
+.tr[data-kind='external'] .tr__name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.tr__port {
+  flex: none;
+  margin-left: -4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.tr__call {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.tr__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tr[data-tone='bad'] .tr__label {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--danger) 80%, var(--text-strong));
+}
+
+.tr__ms {
+  flex: none;
+  color: var(--text-faint);
+}
+
+/* When it ran, across the trace's window; the line is when You got the answer */
+.tr__lane {
+  position: relative;
+  align-self: stretch;
+}
+
+.tr__lane::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+.tr__lane::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--answered) * 100%);
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.tr[data-kind='you'] .tr__lane::before {
+  display: none;
+}
+
+.tr__bar {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 100%);
+  width: max(3px, calc(var(--w) * 100%));
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+
+.tr[data-root] .tr__bar {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.tr[data-tone='bad'] .tr__bar {
+  background: var(--danger);
+}
+
+.tr[data-tone='external'] .tr__bar,
+.tr[data-tone='wait'] .tr__bar {
+  background: #b3b3ae;
+}
+
+/* The tree's connectors, under the rows */
+.trace__lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.trace__lines path {
+  fill: none;
+  stroke: #c9c9c5;
+  stroke-width: 1.75;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-opacity 0.15s ease;
+  animation: trace-draw 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+
+@keyframes trace-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.trace__lines path[data-tone='ok'] {
+  stroke: var(--accent);
+}
+
+.trace__lines path[data-tone='bad'] {
+  stroke: var(--danger);
+}
+
+.trace__lines path[data-tone='external'],
+.trace__lines path[data-tone='wait'] {
+  stroke: #b3b3ae;
+  stroke-dasharray: 3 4;
+  stroke-dashoffset: 0;
+  animation: trace-fade 0.4s ease backwards;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+
+.trace__lines .trace__trunk {
+  stroke: #d3d3cf;
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+  animation: trace-fade 0.3s ease backwards;
+}
+
+.trace__lines circle {
+  fill: #b3b3ae;
+  animation: trace-fade 0.2s ease backwards;
+  animation-delay: calc(var(--i, 0) * 110ms + 380ms);
+}
+
+.trace__lines circle[data-tone='ok'] {
+  fill: var(--accent);
+}
+
+.trace__lines [data-dim] {
+  stroke-opacity: 0.2;
+  fill-opacity: 0.2;
+}
+
+@keyframes trace-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.trace__status {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 15px;
+  background: var(--tile);
+  color: var(--text-strong);
+}
+
+.trace__status[data-class='2'] {
+  background: #e4f4ea;
+  color: var(--ok);
+}
+
+.trace__status[data-class='3'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.trace__status[data-class='4'] {
+  background: #fbf0dd;
+  color: var(--warn);
+}
+
+.trace__status[data-class='5'],
+.trace__status[data-class='x'],
+.trace__status[data-class='✕'] {
+  background: #fdeaea;
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tr,
+  .trace__lines path,
+  .trace__lines circle {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---- Notes ---- */
+
+.trace__notes {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--line);
+  background: #fbf6ea;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--text);
+}
+
+/* ---- Timeline ---- */
+
+.trace__timeline {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 90px;
+  background: var(--surface);
+}
+
+.trace__timeline-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.trace__timeline-head b {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.trace__clear {
+  margin-left: 8px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.trace__window {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.trace__rows {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.trace__row {
+  display: grid;
+  grid-template-columns: 64px 110px minmax(0, 1fr);
+  gap: 12px;
+  padding: 1px 20px;
+}
+
+.trace__row:hover {
+  background: var(--canvas);
+}
+
+.trace__time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.trace__who {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-strong);
+}
+
+.trace__who[data-hue='0'] { color: #2f66e8; }
+.trace__who[data-hue='1'] { color: #0f8b85; }
+.trace__who[data-hue='2'] { color: #c27c00; }
+.trace__who[data-hue='3'] { color: #8e4ec6; }
+.trace__who[data-hue='4'] { color: #d6409f; }
+.trace__who[data-hue='5'] { color: #1f9d57; }
+
+.trace__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-strong);
+}
+
+.trace__body > * + * {
+  margin-left: 8px;
+}
+
+.trace__row[data-kind='call'] .trace__arrow {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.trace__row[data-kind='fail'] .trace__arrow,
+.trace__row[data-kind='fail'] .trace__what {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.trace__row[data-kind='fail'] .trace__what {
+  font-weight: 400;
+}
+
+.trace__row .trace__status {
+  display: inline-block;
+}
+
+.trace__ms {
+  color: var(--text-faint);
+}
+
+.trace__row[data-kind='log'] .trace__body {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.trace__row[data-stream='err'] .trace__text {
+  color: #b4443b;
+}
+
+.trace__row[data-stream='sys'] .trace__text {
+  color: var(--text-faint);
+}
