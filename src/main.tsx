@@ -7,6 +7,10 @@ import App from "./App";
 import { startMcp } from "./mcp/bridge";
 import { watchScrollbars } from "./lib/scrollbars";
 
+// Only macOS puts the window's buttons over the sidebar; Windows and Linux
+// give the window a title bar of their own
+document.documentElement.dataset.os = /Mac/.test(navigator.userAgent) ? "mac" : "other";
+
 // AI agents' calls run here, whichever section is open
 startMcp();
 watchScrollbars();

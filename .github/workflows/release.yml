@@ -1,0 +1,216 @@
+name: Release
+
+# A version tag (v0.2.0, from `npm version`) builds UAT for macOS (Apple
+# silicon and Intel), Linux and Windows and publishes the installers as a
+# GitHub release. Only the macOS builds are signed and notarized, and only
+# when the Apple secrets are set (README → Releases).
+#
+# Run by hand with a tag to build that tag's release again, or with none to
+# only build: the installers are then in the run's artifacts.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, like v0.2.0. Empty only builds."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - name: Resolve the tag
+        id: tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PUSHED: ${{ github.ref_name }}
+          ASKED: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            TAG="$PUSHED"
+          elif [ -n "$ASKED" ]; then
+            TAG="v${ASKED#v}"
+            # A release for a tag that isn't pushed would make one at main's tip
+            if ! gh api "repos/$REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::$TAG isn't on $REPO. Push it first."
+              exit 1
+            fi
+          else
+            TAG=""
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "${TAG:-No tag: building only}"
+
+      - uses: actions/checkout@v5
+        if: steps.tag.outputs.tag != ''
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Check the tag is the app's version
+        if: steps.tag.outputs.tag != ''
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "v$VERSION" != "$TAG" ]; then
+            echo "::error::The tag is $TAG but package.json says $VERSION. Release with npm version, which tags the version it sets."
+            exit 1
+          fi
+
+      # A draft until every build is in, so nobody downloads half a release
+      - name: Create the release
+        if: steps.tag.outputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "$TAG has a release already: its installers are replaced"
+            exit 0
+          fi
+          PRE=()
+          [[ "$TAG" == *-* ]] && PRE=(--prerelease)
+          gh release create "$TAG" --repo "$REPO" --verify-tag --draft "${PRE[@]}" \
+            --title "UAT $TAG" --generate-notes
+
+  build:
+    name: ${{ matrix.name }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    env:
+      # Secrets can't be read in an if:, so whether to sign is worked out here
+      SIGN: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          key: ${{ matrix.target }}
+
+      # Built on 22.04, so the .deb and AppImage run on its glibc and newer
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential file patchelf \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libxdo-dev libssl-dev
+
+      - name: Import the Developer ID certificate
+        if: env.SIGN == 'true'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - run: npm ci
+
+      # Tauri signs the app with APPLE_SIGNING_IDENTITY, and notarizes it
+      # when APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID are set too
+      - name: Build
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          # Tauri goes by which of these are set, even to nothing
+          for v in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ "$SIGN" != "true" ] || [ -z "${!v:-}" ]; then unset "$v"; fi
+          done
+          npm run tauri build -- --target ${{ matrix.target }}
+
+      - name: Collect the installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="src-tauri/target/${{ matrix.target }}/release/bundle"
+          mkdir -p installers
+          find "$BUNDLE" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" \
+            -o -name "*.AppImage" -o -name "*.msi" -o -name "*-setup.exe" \) \
+            -exec cp {} installers/ \;
+          ls -l installers
+          if [ -z "$(ls installers)" ]; then
+            echo "::error::No installers in $BUNDLE"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UAT ${{ matrix.name }}
+          path: installers/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Add them to the release
+        if: needs.prepare.outputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" installers/* --clobber --repo "$REPO"
+
+  publish:
+    name: Publish
+    needs: [prepare, build]
+    if: needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$REPO" --draft=false

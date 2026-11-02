@@ -1,0 +1,73 @@
+name: CI
+
+# Type-checks and tests UAT on macOS, Linux and Windows for every push to
+# main and every pull request.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Linux
+            os: ubuntu-22.04
+          - name: Windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential file patchelf \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev libxdo-dev libssl-dev
+
+      - run: npm ci
+
+      # tsc, then the UI the app embeds: the Rust build needs dist/
+      - name: Type-check and build the UI
+        run: npm run build
+
+      - name: UI tests
+        if: runner.os == 'Linux'
+        run: npm test
+
+      - name: Rust tests
+        if: runner.os != 'Windows'
+        working-directory: src-tauri
+        run: cargo test --locked --lib
+
+      # The tests lean on a Unix shell, git and node, so on Windows they're
+      # compiled, not run
+      - name: Rust build
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        run: cargo check --locked --all-targets

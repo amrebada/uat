@@ -39,6 +39,26 @@ struct Spec {
     then: &'static str,
 }
 
+/// Where Claude Desktop keeps its config, from the home folder
+#[cfg(target_os = "macos")]
+macro_rules! claude_desktop_dir {
+    () => {
+        "Library/Application Support/Claude"
+    };
+}
+#[cfg(windows)]
+macro_rules! claude_desktop_dir {
+    () => {
+        "AppData/Roaming/Claude"
+    };
+}
+#[cfg(all(unix, not(target_os = "macos")))]
+macro_rules! claude_desktop_dir {
+    () => {
+        ".config/Claude"
+    };
+}
+
 const SPECS: &[Spec] = &[
     Spec {
         id: "claude-code",
@@ -53,9 +73,9 @@ const SPECS: &[Spec] = &[
         id: "claude-desktop",
         name: "Claude Desktop",
         format: Format::Json,
-        file: "Library/Application Support/Claude/claude_desktop_config.json",
+        file: concat!(claude_desktop_dir!(), "/claude_desktop_config.json"),
         also: &[],
-        signs: &["/Applications/Claude.app", "Library/Application Support/Claude"],
+        signs: &["/Applications/Claude.app", claude_desktop_dir!()],
         then: "Quit Claude Desktop and open it again.",
     },
     Spec {
@@ -104,7 +124,7 @@ pub struct Client {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+    crate::docker::home_dir().unwrap_or_default()
 }
 
 fn at(home: &Path, rel: &str) -> PathBuf {
@@ -223,15 +243,28 @@ fn put_toml(path: &Path, command: Option<&str>) -> CmdResult<()> {
 // ---- Claude Code's CLI ----
 
 /// `claude`, found the way a terminal would
+#[cfg(unix)]
 fn claude_cli() -> Option<String> {
-    let out = Command::new("/bin/zsh").args(["-lic", "command -v claude"]).output().ok()?;
+    let out = Command::new(crate::process::login_shell()).args(["-lic", "command -v claude"]).output().ok()?;
     let found = String::from_utf8_lossy(&out.stdout).lines().last()?.trim().to_string();
     found.starts_with('/').then_some(found)
 }
 
+/// `claude.exe`, or npm's `claude.cmd`, on PATH
+#[cfg(windows)]
+fn claude_cli() -> Option<String> {
+    let out = crate::process::quiet(&mut Command::new("where")).arg("claude").output().ok()?;
+    let found = String::from_utf8_lossy(&out.stdout).into_owned();
+    let runnable = |l: &&str| [".exe", ".cmd", ".bat"].iter().any(|x| l.to_lowercase().ends_with(x));
+    found.lines().map(str::trim).find(runnable).map(String::from)
+}
+
 fn claude(args: &[&str]) -> CmdResult<()> {
     let cli = claude_cli().ok_or("Claude Code's `claude` command wasn't found")?;
-    let out = Command::new(&cli).args(args).output().map_err(|e| format!("Couldn't run claude: {e}"))?;
+    let out = crate::process::quiet(&mut Command::new(&cli))
+        .args(args)
+        .output()
+        .map_err(|e| format!("Couldn't run claude: {e}"))?;
     if out.status.success() {
         Ok(())
     } else {

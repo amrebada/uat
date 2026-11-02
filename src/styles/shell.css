@@ -29,6 +29,10 @@
   height: 52px;
 }
 
+:root[data-os="other"] .side__top {
+  height: 16px;
+}
+
 .side__scroll {
   display: flex;
   flex: 1;

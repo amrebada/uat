@@ -5,7 +5,6 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -222,8 +221,10 @@ fn log<R: Runtime>(app: &AppHandle<R>, id: &str, stream: &'static str, text: Str
 // ---------------------------------------------------------------------------
 // Spawning
 
-fn login_shell() -> String {
-    std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into())
+#[cfg(unix)]
+pub(crate) fn login_shell() -> String {
+    let fallback = if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/sh" };
+    std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| fallback.into())
 }
 
 /// GUI apps on macOS start with a bare PATH. Ask the login shell once for the
@@ -233,6 +234,13 @@ pub(crate) fn shell_env() -> &'static HashMap<String, String> {
     ENV.get_or_init(resolve_shell_env)
 }
 
+/// Windows apps get the user's whole environment already
+#[cfg(windows)]
+fn resolve_shell_env() -> HashMap<String, String> {
+    std::env::vars().collect()
+}
+
+#[cfg(unix)]
 fn resolve_shell_env() -> HashMap<String, String> {
     const MARK: &str = "__UAT_ENV__";
     let mut env: HashMap<String, String> = std::env::vars().collect();
@@ -275,9 +283,30 @@ fn resolve_shell_env() -> HashMap<String, String> {
     env
 }
 
-/// Runs `command` through the login shell in its own process group, so a
-/// stop reaches everything it started (npm → node → esbuild). Calls
-/// `on_line` for each line of output and `on_exit` with the exit code.
+/// The login shell running `command` in its own process group, so a stop
+/// reaches everything it started (npm → node → esbuild)
+#[cfg(unix)]
+fn shell(command: &str) -> Command {
+    use std::os::unix::process::CommandExt;
+    let mut cmd = Command::new(login_shell());
+    cmd.arg("-c").arg(command).process_group(0);
+    cmd
+}
+
+/// cmd.exe running `command`, with no console window of its own. Its
+/// quoting isn't the C runtime's, so the line goes to it as typed.
+#[cfg(windows)]
+fn shell(command: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut cmd = Command::new("cmd");
+    cmd.raw_arg(format!("/S /C \"{command}\"")).creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    cmd
+}
+
+/// Runs `command` through the shell. Calls `on_line` for each line of
+/// output and `on_exit` with the exit code.
 fn spawn(
     command: &str,
     cwd: &Path,
@@ -286,9 +315,7 @@ fn spawn(
     on_line: impl Fn(&'static str, String) + Send + Clone + 'static,
     on_exit: impl FnOnce(Option<i32>) + Send + 'static,
 ) -> std::io::Result<i32> {
-    let mut child = Command::new(login_shell())
-        .arg("-c")
-        .arg(command)
+    let mut child = shell(command)
         .current_dir(cwd)
         .env_clear()
         .envs(env)
@@ -296,7 +323,6 @@ fn spawn(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
         .spawn()?;
     let pid = child.id() as i32;
 
@@ -345,11 +371,36 @@ fn read_lines(stream: impl Read, name: &'static str, on_line: impl Fn(&'static s
     }
 }
 
-fn signal_group(pid: i32, signal: i32) {
+/// Asks a process and everything it started to stop, or with `force`, ends them
+#[cfg(unix)]
+fn signal_group(pid: i32, force: bool) {
+    let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
     // SAFETY: kill(2) with a negative pid signals that process group only
     unsafe {
         libc::kill(-pid, signal);
     }
+}
+
+/// Windows has no SIGTERM a console program can catch, so the tree is ended
+/// at once, `force` or not
+#[cfg(windows)]
+fn signal_group(pid: i32, _force: bool) {
+    let _ = quiet(&mut Command::new("taskkill"))
+        .args(["/T", "/F", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// A console program run without a window flashing up on Windows
+pub(crate) fn quiet(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
 }
 
 // ---------------------------------------------------------------------------
@@ -425,7 +476,7 @@ async fn run<R: Runtime>(app: AppHandle<R>, def: ProcessDef, cwd: PathBuf) {
                 }
             });
             if stop_now {
-                signal_group(pid, libc::SIGTERM);
+                signal_group(pid, false);
             }
             if let Some(file) = traced {
                 trace::follow(id.clone(), file, done);
@@ -504,13 +555,13 @@ fn stop<R: Runtime>(app: &AppHandle<R>, id: &str) {
     });
     emit_status(app, id);
     let Some(pid) = pid else { return };
-    signal_group(pid, libc::SIGTERM);
+    signal_group(pid, false);
     // Anything that ignores SIGTERM gets SIGKILL after a grace period
     let (app, id) = (app.clone(), id.to_string());
     std::thread::spawn(move || {
         std::thread::sleep(STOP_GRACE);
         if store(&app).runs.lock().unwrap().get(&id).is_some_and(|r| r.pid == Some(pid)) {
-            signal_group(pid, libc::SIGKILL);
+            signal_group(pid, true);
         }
     });
 }
@@ -523,12 +574,12 @@ fn is_active<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
 pub fn kill_all<R: Runtime>(app: &AppHandle<R>) {
     let pids: Vec<i32> = store(app).runs.lock().unwrap().values().filter_map(|r| r.pid).collect();
     for &pid in &pids {
-        signal_group(pid, libc::SIGTERM);
+        signal_group(pid, false);
     }
     if !pids.is_empty() {
         std::thread::sleep(Duration::from_millis(400));
         for pid in pids {
-            signal_group(pid, libc::SIGKILL);
+            signal_group(pid, true);
         }
     }
 }
@@ -743,8 +794,8 @@ pub fn process_inspect_folder(cwd: String) -> FolderInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
 
+    #[cfg(unix)]
     fn run_and_collect(command: &str) -> (Vec<(String, String)>, Option<i32>) {
         let lines = Arc::new(Mutex::new(Vec::new()));
         let (tx, rx) = mpsc::channel();
@@ -764,6 +815,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn captures_both_streams_env_and_exit_code() {
         let (lines, code) = run_and_collect("echo \"$GREETING out\"; echo err >&2; printf 'a\\rb\\n'; exit 3");
         assert_eq!(code, Some(3));
@@ -773,6 +825,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn stopping_reaches_the_whole_process_group() {
         let (tx, rx) = mpsc::channel();
         let pid = spawn(
@@ -785,11 +838,16 @@ mod tests {
         )
         .unwrap();
         std::thread::sleep(Duration::from_millis(200));
-        signal_group(pid, libc::SIGTERM);
-        // Exits on the signal (no code), and the backgrounded sleep is gone too
+        signal_group(pid, false);
+        // Exits on the signal (no code), and the backgrounded sleep is gone
+        // too, once whatever adopted it has reaped it: Linux takes a moment
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).expect("exit"), None);
-        let alive = unsafe { libc::kill(-pid, 0) } == 0;
-        assert!(!alive, "process group {pid} still has members");
+        let alive = || unsafe { libc::kill(-pid, 0) } == 0;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while alive() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!alive(), "process group {pid} still has members");
     }
 
     #[test]
@@ -901,6 +959,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolves_a_login_shell_path() {
         let env = resolve_shell_env();
         assert!(env.get("PATH").is_some_and(|p| p.contains("/usr/bin")));

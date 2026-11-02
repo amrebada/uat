@@ -76,6 +76,15 @@ With the demo running in the app (New → Flow demo or Trace demo), `UAT_DEMO_PO
 
 `cargo test -- --ignored --nocapture live_` runs against the local engine, on throwaway networks, and removes what it makes. It checks six things. A service built from a Dockerfile reaches `redis:7-alpine` by name. A container reaches a server on this Mac by name through the proxy. A command goes through its whole life in the app: start, logs, proxy, stop, remove. A request to a Node command is traced through a container it calls and on to a third, with the names that didn't resolve on either side (it uses the `caddy:2-alpine` and `oven/bun:1.3-slim` images). The trace demo sets itself up and traces its three requests: blue all the way, red at `payments`, and nothing for a health check. Removing a network takes the container built for it with its image and volume, and the command with its proxy, and leaves an attached container running.
 
+### On Linux and Windows
+
+UAT is made and tested on macOS. The Linux and Windows builds are built and tested in CI, but haven't been tried by hand yet. What's different there:
+
+- Docker Desktop on Windows is found on its named pipe: `npipe://` in `DOCKER_HOST`, else `\\.\pipe\docker_engine`. On Linux it's `DOCKER_HOST`, Docker Desktop's socket, rootless Docker's, then `/var/run/docker.sock`.
+- Commands run through `cmd /C` on Windows and the login shell elsewhere. Stopping one on Windows ends it and everything it started at once: there's no SIGTERM to ask first.
+- With Docker Engine on Linux, containers reach this machine through the `docker0` bridge, so a command's server has to listen on `0.0.0.0`, not `127.0.0.1`, for containers to reach it by name.
+- The window has the system's title bar, where macOS has the traffic lights over the sidebar.
+
 ## Removing a network
 
 The bin in a network's toolbar, or Remove network… when you right-click it in the sidebar, removes it from Docker with what UAT runs on it. First it lists what will go:
@@ -237,6 +246,8 @@ It uses your Google Chrome, or the browser `CHROME` names. `marketing/hero.html`
 | `src-tauri/src/networks.rs` | Removing a network: what it would take (`network_plan`), then removing its containers and commands, disconnecting attached containers, and its images and volumes when asked. Progress streams as `network://progress` events. |
 | `src-tauri/src/share.rs` | What sharing a network needs from this Mac: a snapshot of its containers with the env each was given (`network_snapshot`), which git repo a folder is in (`git_info`), clones of repos in the usual code folders (`find_repos`), ports in use, `git clone`, and reading and writing the file. |
 | `src-tauri/src/collections.rs` | Loads and saves the API workspace as `workspace.json` in the app data folder. |
+| `.github/workflows/` | CI on every push and pull request, and the release build for each platform. |
+| `scripts/version.cjs` | Sets the Rust crate's version to `package.json`'s when `npm version` runs. |
 | `src-tauri/src/mcp/` | The MCP server: the protocol (`protocol.rs`), the HTTP endpoint and its checks (`http.rs`), `app mcp` over stdio (`bridge.rs`), adding UAT to agents' configs (`install.rs`), and passing calls to the window (`mod.rs`). |
 | `src/docker/` | Network canvas, Add service popover, inspector, the Remove network dialog; `processes.ts` keeps the commands and their output live. `share.ts` is the network file: what doesn't travel, building it, reading it, what an import asks and the steps it takes; `shareRun.ts` reads this Mac and runs an import, for the Export and Import dialogs and the MCP tools. |
 | `src/collections/` | Tree, editors, the workspace model (`model.ts`) and open socket connections (`live.ts`). |

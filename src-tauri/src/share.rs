@@ -56,6 +56,7 @@ pub struct Snapshot {
     machine: Machine,
 }
 
+#[cfg(unix)]
 fn hostname() -> String {
     let mut buf = [0u8; 256];
     // SAFETY: the buffer is large enough and NUL-terminated by gethostname
@@ -64,10 +65,15 @@ fn hostname() -> String {
     if ok { String::from_utf8_lossy(&buf[..end]).into_owned() } else { String::new() }
 }
 
+#[cfg(windows)]
+fn hostname() -> String {
+    std::env::var("COMPUTERNAME").unwrap_or_default()
+}
+
 pub(crate) fn machine() -> Machine {
     Machine {
-        home: std::env::var("HOME").unwrap_or_default(),
-        user: std::env::var("USER").or_else(|_| std::env::var("LOGNAME")).unwrap_or_default(),
+        home: docker::home_dir().map(|h| h.display().to_string()).unwrap_or_default(),
+        user: ["USER", "LOGNAME", "USERNAME"].iter().find_map(|k| std::env::var(k).ok()).unwrap_or_default(),
         host: hostname(),
     }
 }
@@ -243,6 +249,9 @@ pub(crate) fn git_info_of(path: &Path) -> Option<GitInfo> {
     let root = path.ancestors().find(|p| p.join(".git").exists())?;
     let url = git_dir(root).and_then(|g| remote_url(&g));
     let inside = path.strip_prefix(root).ok()?.to_string_lossy().into_owned();
+    // Shared files name folders the same on every machine
+    #[cfg(windows)]
+    let inside = inside.replace('\\', "/");
     Some(GitInfo {
         root: root.display().to_string(),
         repo: url.as_deref().and_then(repo_id),
@@ -366,7 +375,7 @@ pub async fn git_clone(url: String, parent: String) -> CmdResult<String> {
     }
     let target = dest.clone();
     let output = tauri::async_runtime::spawn_blocking(move || {
-        Command::new("git")
+        crate::process::quiet(&mut Command::new("git"))
             .envs(crate::process::shell_env())
             .env("GIT_TERMINAL_PROMPT", "0")
             .args(["clone", "--", &url])

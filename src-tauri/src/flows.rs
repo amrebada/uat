@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn puts_relative_sheets_in_documents() {
-        let home = std::env::var("HOME").unwrap();
+        let home = crate::docker::home_dir().unwrap();
         assert_eq!(out_path("rides.xlsx"), PathBuf::from(&home).join("Documents/UAT/rides.xlsx"));
         assert_eq!(out_path("~/x/y.csv"), PathBuf::from(&home).join("x/y.csv"));
         assert_eq!(out_path("/tmp/a.csv"), PathBuf::from("/tmp/a.csv"));

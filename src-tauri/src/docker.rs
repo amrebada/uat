@@ -39,12 +39,21 @@ pub(crate) fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+/// The home folder: HOME, or USERPROFILE on Windows, where HOME is seldom set
+pub(crate) fn home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+    #[cfg(not(windows))]
+    let home = std::env::var_os("HOME");
+    home.filter(|h| !h.is_empty()).map(PathBuf::from)
+}
+
 /// `~/code/app` → `/Users/me/code/app`; the dialog gives absolute paths, people type `~`.
 pub(crate) fn expand_home(path: &str) -> PathBuf {
     let path = path.trim();
-    match (path.strip_prefix("~"), std::env::var_os("HOME")) {
-        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
-            PathBuf::from(home).join(rest.trim_start_matches('/'))
+    match (path.strip_prefix("~"), home_dir()) {
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
+            home.join(rest.trim_start_matches(['/', '\\']))
         }
         _ => PathBuf::from(path),
     }
@@ -53,6 +62,7 @@ pub(crate) fn expand_home(path: &str) -> PathBuf {
 // ---------------------------------------------------------------------------
 // Connection
 
+#[cfg(unix)]
 fn socket_candidates() -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(host) = std::env::var("DOCKER_HOST") {
@@ -60,24 +70,44 @@ fn socket_candidates() -> Vec<String> {
             out.push(path.to_string());
         }
     }
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+    if let Some(home) = home_dir() {
         for rel in [
             ".docker/run/docker.sock",
             ".orbstack/run/docker.sock",
             ".colima/default/docker.sock",
             ".rd/docker.sock",
+            // Docker Desktop on Linux
+            ".docker/desktop/docker.sock",
         ] {
             out.push(home.join(rel).to_string_lossy().into_owned());
         }
     }
+    // Rootless Docker on Linux
+    if let Some(run) = std::env::var_os("XDG_RUNTIME_DIR") {
+        out.push(PathBuf::from(run).join("docker.sock").to_string_lossy().into_owned());
+    }
     out.push("/var/run/docker.sock".to_string());
+    out
+}
+
+/// Docker Desktop on Windows listens on a named pipe, which can't be
+/// looked for like a file: the first one is tried
+#[cfg(windows)]
+fn socket_candidates() -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(host) = std::env::var("DOCKER_HOST") {
+        if let Some(path) = host.strip_prefix("npipe://") {
+            out.push(path.to_string());
+        }
+    }
+    out.push(r"\\.\pipe\docker_engine".to_string());
     out
 }
 
 async fn connect() -> CmdResult<(Docker, String)> {
     let path = socket_candidates()
         .into_iter()
-        .find(|p| Path::new(p).exists())
+        .find(|p| cfg!(windows) || Path::new(p).exists())
         .ok_or_else(|| "Docker engine not found. Start Docker Desktop, OrbStack or Colima.".to_string())?;
     let docker = Docker::connect_with_socket(&path, 120, API_DEFAULT_VERSION).map_err(err)?;
     // Talk the daemon's API version, not ours, so older engines still answer.
@@ -851,7 +881,7 @@ mod tests {
 
     #[test]
     fn expands_home() {
-        let home = std::env::var("HOME").unwrap();
+        let home = crate::docker::home_dir().unwrap();
         assert_eq!(expand_home("~/code/app"), PathBuf::from(&home).join("code/app"));
         assert_eq!(expand_home("~"), PathBuf::from(&home));
         assert_eq!(expand_home("/abs/path"), PathBuf::from("/abs/path"));

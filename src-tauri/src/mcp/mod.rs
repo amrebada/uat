@@ -46,9 +46,20 @@ pub struct Settings {
     pub token: String,
 }
 
+/// In the app's data folder, where Tauri keeps its other files; the bridge
+/// has no app to ask for it
 pub fn settings_path() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    home.join("Library/Application Support").join(APP_ID).join("mcp.json")
+    let home = crate::docker::home_dir().unwrap_or_default();
+    #[cfg(target_os = "macos")]
+    let data = home.join("Library/Application Support");
+    #[cfg(windows)]
+    let data = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData/Roaming"));
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| home.join(".local/share"));
+    data.join(APP_ID).join("mcp.json")
 }
 
 impl Settings {
@@ -67,18 +78,16 @@ impl Settings {
 
     fn save(&self, path: &Path) -> CmdResult<()> {
         use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
         let tmp = path.with_extension("json.tmp");
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)
-            .map_err(|e| e.to_string())?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        // Windows keeps a profile's files to its user already
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut f = options.open(&tmp).map_err(|e| e.to_string())?;
         f.write_all(serde_json::to_string_pretty(self).unwrap_or_default().as_bytes())
             .map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, path).map_err(|e| e.to_string())
@@ -228,7 +237,8 @@ pub fn command() -> String {
     std::env::current_exe()
         .ok()
         .and_then(|p| p.canonicalize().ok())
-        .map(|p| p.display().to_string())
+        // Windows canonicalizes to \\?\C:\…, which not every agent can run
+        .map(|p| p.display().to_string().trim_start_matches(r"\\?\").to_string())
         .unwrap_or_default()
 }
 
@@ -310,7 +320,8 @@ pub async fn mcp_uninstall(id: String) -> CmdResult<install::Client> {
     blocking(move || install::uninstall(&id, &command())).await
 }
 
-#[cfg(test)]
+// The settings file's mode is a Unix one
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
