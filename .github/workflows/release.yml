@@ -112,8 +112,9 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     env:
-      # Secrets can't be read in an if:, so whether to sign is worked out here
-      SIGN: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' }}
+      # Secrets can't be read in an if:, so whether to sign is worked out here.
+      # Not SIGN: linuxdeploy GPG-signs the AppImage when that's set, even to false
+      MACOS_SIGN: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -145,7 +146,7 @@ jobs:
             libayatana-appindicator3-dev libxdo-dev libssl-dev
 
       - name: Import the Developer ID certificate
-        if: env.SIGN == 'true'
+        if: env.MACOS_SIGN == 'true'
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
@@ -167,7 +168,7 @@ jobs:
           set -euo pipefail
           # Tauri goes by which of these are set, even to nothing
           for v in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [ "$SIGN" != "true" ] || [ -z "${!v:-}" ]; then unset "$v"; fi
+            if [ "$MACOS_SIGN" != "true" ] || [ -z "${!v:-}" ]; then unset "$v"; fi
           done
           if ! npm run tauri build -- --target "$TARGET"; then
             # Tauri hides why linuxdeploy failed, so bundle again with its
