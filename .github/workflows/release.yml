@@ -162,13 +162,19 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           # Tauri goes by which of these are set, even to nothing
           for v in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
             if [ "$SIGN" != "true" ] || [ -z "${!v:-}" ]; then unset "$v"; fi
           done
-          npm run tauri build -- --target ${{ matrix.target }}
+          if ! npm run tauri build -- --target "$TARGET"; then
+            # Tauri hides why linuxdeploy failed, so bundle again with its
+            # output in the log. A failure that was a one-off passes this time.
+            [ "$RUNNER_OS" = Linux ] || exit 1
+            npm run tauri bundle -- --target "$TARGET" --verbose
+          fi
 
       - name: Collect the installers
         shell: bash
